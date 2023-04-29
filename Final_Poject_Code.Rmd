@@ -1,0 +1,493 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# Importing the libraries required for the computation
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(dplyr)
+library(boot)
+library(randomForest)
+library(gbm)
+library(tree)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(nnet)
+```
+
+```{r}
+# Importing the Collision data provided by Seattle Police department.Using "stringsAsFactors" since we have factor variables
+
+df <- read.csv("/Users/aishwaryasaibewar/Downloads/Collisions.csv",stringsAsFactors = TRUE)
+```
+
+```{r}
+#Remove key variables which don't have much significance
+df1 = subset(df, select = -c(OBJECTID,COLDETKEY,INTKEY,REPORTNO,STATUS,LOCATION,EXCEPTRSNCODE,EXCEPTRSNDESC,SEVERITYDESC,SERIOUSINJURIES,JUNCTIONTYPE,SDOT_COLCODE,SDOT_COLDESC,ST_COLCODE,ST_COLDESC,PEDROWNOTGRNT,SDOTCOLNUM,SEGLANEKEY,CROSSWALKKEY,INCDTTM))
+
+```
+
+```{r}
+#Converted INCDATE to date
+df1$INCDATE = as.Date(df1$INCDATE)
+```
+
+
+```{r}
+#Convert values in SPEEDING, Y as 1 and N as 0
+df1$SPEEDING <- ifelse(df1$SPEEDING == 'Y', 1 , 0)
+```
+
+
+```{r}
+#Convert values in INATTENTIONIND,  Y as 1 and N as 0
+df1$INATTENTIONIND <- ifelse(df1$INATTENTIONIND == 'Y', 1 , 0)
+```
+
+
+```{r}
+#Convert values in UNDERINFL, "Y and 1 as 1" and "N and 0 as 0"
+df1$UNDERINFL <- ifelse(df1$UNDERINFL == 'Y'|| df1$UNDERINFL == '1', 1 , 0)
+```
+
+
+```{r}
+#Convert values in SEVERITYCODE "2b as 4" and "N and 0 as 0"
+df1$SEVERITYCODE = as.integer(df1$SEVERITYCODE)
+replace(df1$SEVERITYCODE, '2b','4')
+
+#Convert the SEVERITYCODE to factor variable
+df1$SEVERITYCODE = as.factor(df1$SEVERITYCODE)
+```
+
+```{r}
+# Removing the NA if any
+df1 = na.omit(df1)
+```
+
+
+
+```{r}
+#Altering the values for COLLISIONTYPE to view clearly on decision tree with out overlapping--- Collision of vehicles at angles=1 ,Collision with Cycles=2,Head On Collision =3,Collision while turning left or right =4, Collision with Parked Car =5,Collision with Pedestrian =6,Rear end collision = 7,Sideswipe collision = 8, Unknown
+
+df1$COLLISIONTYPE <- ifelse(df1$COLLISIONTYPE == 'Angles', '1',
+              ifelse(df1$COLLISIONTYPE == 'Cycles', '2',
+              ifelse(df1$COLLISIONTYPE == 'Head On', '3',
+              ifelse(df1$COLLISIONTYPE == 'Left Turn', '4',
+              ifelse(df1$COLLISIONTYPE == 'Parked Car', '5',
+              ifelse(df1$COLLISIONTYPE == 'Pedestrian', '6',
+              ifelse(df1$COLLISIONTYPE == 'Rear Ended', '7',
+              ifelse(df1$COLLISIONTYPE == 'Right Turn', '4',
+              ifelse(df1$COLLISIONTYPE == 'Sideswipe', '8','Unknown')))))))))
+```
+
+
+```{r}
+#Altering values for LIGHTCOND-- 0 = Light, 1 = Medium, 2 = Dark
+df1$LIGHTCOND <- ifelse(df1$LIGHTCOND == 'Dark - No Street Lights', '2',
+              ifelse(df1$LIGHTCOND == 'Dark - Street Lights Off', '2',
+              ifelse(df1$LIGHTCOND == 'Dark - Street Lights On', '1',
+              ifelse(df1$LIGHTCOND == 'Dark - Unknown Lighting', '2',
+              ifelse(df1$LIGHTCOND == 'Dawn', '1',
+              ifelse(df1$LIGHTCOND == 'Daylight', '0',
+              ifelse(df1$LIGHTCOND == 'Dusk', '1',
+              ifelse(df1$LIGHTCOND == 'Others', 'Unknown','Unknown'))))))))
+```
+
+
+
+```{r}
+#Altering values for WEATHER-- 0 = Clear, 1 = Overcast and Cloudy, 2 = Windy, 3 = Rain and Snow
+df1$WEATHER <- ifelse(df1$WEATHER == 'Overcast', '1',
+              ifelse(df1$WEATHER == 'Clear', '0',
+              ifelse(df1$WEATHER == 'Other', '3',
+              ifelse(df1$WEATHER == 'Raining', '3',
+              ifelse(df1$WEATHER == 'Snowing', '3',
+              ifelse(df1$WEATHER == 'Fog/Smog/Smoke', '2',
+              ifelse(df1$WEATHER == 'Sleet/Hail/Freezing Rain Blowing Sand/Dirt', '3','Unknown')))))))
+ 
+```
+
+
+
+```{r}
+#Altering values for ROADCOND-- 0 = Dry, 1 = Mushy, 2 = Wet
+
+df1$ROADCOND <- ifelse(df1$ROADCOND == 'Wet', 1,
+              ifelse(df1$ROADCOND == 'Standing Water', 1,
+              ifelse(df1$ROADCOND == 'Snow/Slush', 2,
+              ifelse(df1$ROADCOND == 'Ice', 2,
+              ifelse(df1$ROADCOND == 'Dry', 3,
+              ifelse(df1$ROADCOND == 'Sand/Mud/Dirt', 3,
+              ifelse(df1$ROADCOND == 'Oil', 1,
+              ifelse(df1$ROADCOND == 'Other', 'Unknown','Unknown'))))))))
+```
+
+
+```{r}
+#Converting the datatype of below variables to factors
+df1$LIGHTCOND = as.factor(df1$LIGHTCOND)
+df1$UNDERINFL = as.factor(df1$UNDERINFL)
+df1$SPEEDING = as.factor(df1$SPEEDING)
+df1$COLLISIONTYPE = as.factor(df1$COLLISIONTYPE)
+df1$WEATHER = as.factor(df1$WEATHER)
+df1$ROADCOND = as.factor(df1$ROADCOND)
+df1$LIGHTCOND = as.factor(df1$LIGHTCOND)
+df1$INCDATE = as.character(df1$INCDATE)
+df1$SEVERITYCODE = as.factor(df1$SEVERITYCODE)
+df1$PEDCOUNT = as.factor(df1$PEDCOUNT)
+df1$VEHCOUNT = as.factor(df1$VEHCOUNT)
+df1$PEDCYLCOUNT = as.factor(df1$PEDCYLCOUNT)
+
+```
+
+```{r}
+#Renaming variables to meaningful names
+df1 = rename(df1, VEHICLE_COUNT = VEHCOUNT, PEDESTRIANS_COUNT = PEDCOUNT, BICYCLE_COUNT= PEDCYLCOUNT,ADDRESS_TYPE=ADDRTYPE,SEVERITY=SEVERITYCODE,LIGHT_CONDITIONS=LIGHTCOND,COLLISION_TYPE=COLLISIONTYPE)
+```
+
+
+```{r}
+#Split the data into training and test in the ratio of 60:20 respectively
+train <- sample(nrow(df1) * 0.6)
+df_train <- df1[train, ]
+df_test <- df1[-train, ]
+```
+
+
+```{r}
+#Fit the tree model
+df_tree<- tree(COLLISION_TYPE~., data = df_train)
+
+#Summary of the tree model
+summary(df_tree)
+
+```
+
+```{r}
+#Plot the decision tree
+plot(df_tree)
+text(df_tree, pretty = 0)
+```
+
+
+```{r}
+# Performing the cross validation to find the best node with the least deviance.It reduces the decision tree's size and creates a subtree to balance variation and bias
+cv.df <- cv.tree(df_tree)
+plot(cv.df$size, cv.df$dev, type = "b", xlab = "Terminal nodes", ylab="Deviance")+
+  title(main="Best Number of Nodes")
+```
+
+```{r}
+# Pruning the tree model and display the pruned tree
+prune.df <- prune.tree(df_tree,best=7, method = c("misclass")) 
+prune.df
+names(prune.df)
+plot(prune.df)
+text(prune.df, pretty = 0)
+```
+
+```{r}
+#Examine the model's performance on the test data.
+yhat <- predict(prune.df, newdata = df_test, type="class")
+treemodel<- mean(yhat == df_test$COLLISION_TYPE)
+treemodel
+```
+
+
+
+#BAGGING Method (m=p)
+
+
+```{r}
+# mtry= m= number of predictors considered at each split
+#Fit the bagging model with m=p, i.e., with the full set of predictors
+npredictors = length(df_train)
+bagging.collision <- randomForest(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, 
+                           data=df_train,
+                           mtry=npredictors-14,
+                           importance=TRUE,ntree=500)
+
+```
+
+
+```{r}
+#Examine the model's performance on the test data.
+predicted_collision <-predict(bagging.collision, newdata = df_test)
+bagging<-mean(predicted_collision == df_test$COLLISION_TYPE)
+bagging
+```
+The model predicted correctly 65.18% of the time
+
+```{r}
+#Examine the error rate on the test data.
+mean(predicted_collision != df_test$COLLISION_TYPE)
+```
+The model has an Error rate of 34.8%
+
+
+```{r}
+#Plot the importance of each predictors
+importance(bagging.collision)
+varImpPlot(bagging.collision)
+```
+
+
+#Random Forest model(m= p/2)
+
+```{r}
+#Fit the Random forest model with m=p/2, i.e., with half of the predictors
+npredictors = length(df_train)
+rf.collision1 <- randomForest(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, 
+                           data=df_train,
+                           mtry=(npredictors-14)/2,
+                           importance=TRUE,ntree=500)
+
+```
+
+
+```{r}
+#Examine the model's performance on the test data.
+predicted_collision <-predict(rf.collision1, newdata = df_test)
+rfhalf<-mean(predicted_collision == df_test$COLLISION_TYPE)
+rfhalf
+```
+The model predicted correctly 65.7% of the time
+
+```{r}
+#Examine the error rate on the test data.
+mean(predicted_collision != df_test$COLLISION_TYPE)
+```
+The model has an Error rate of 34.29%
+
+
+```{r}
+#Plot the importance of each predictors
+importance(rf.collision1)
+varImpPlot(rf.collision1)
+```
+
+
+
+#Random Forest model(m= sqrt(p))
+
+```{r}
+#Fit the Random forest model with m=sqrt(p), i.e., with square root of predictors
+npredictors = length(df_train)
+rf.collision2 <- randomForest(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, 
+                           data=df_train,
+                           mtry=sqrt(npredictors-14),
+                           importance=TRUE,ntree=500)
+
+```
+
+
+```{r}
+#Examine the model's performance on the test data.
+predicted_collision <-predict(rf.collision2, newdata = df_test)
+rfsqrt<-mean(predicted_collision == df_test$COLLISION_TYPE)
+rfsqrt
+```
+The model predicted correctly 65.16% of the time
+
+```{r}
+#Examine the error rate on the test data.
+mean(predicted_collision != df_test$COLLISION_TYPE)
+```
+The model has an Error rate of 34.84%
+
+```{r}
+#Plot the importance of each predictors
+importance(rf.collision2)
+varImpPlot(rf.collision1)
+```
+
+
+
+#Random Forest model(m= p/3)
+
+```{r}
+#Fit the Random forest model with m=p/3, i.e., with one third of predictors
+npredictors = length(df_train)
+rf.collision3 <- randomForest(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, 
+                           data=df_train,
+                           mtry=(npredictors-14)/3,
+                           importance=TRUE,ntree=500)
+
+```
+
+```{r}
+#Examine the model's performance on the test data.
+predicted_collision <-predict(rf.collision3, newdata = df_test)
+rfonethird<-mean(predicted_collision == df_test$COLLISION_TYPE)
+rfonethird
+```
+
+```{r}
+#Examine the error rate on the test data.
+mean(predicted_collision != df_test$COLLISION_TYPE)
+```
+
+```{r}
+#Plot the importance of each predictors
+importance(rf.collision2)
+varImpPlot(rf.collision2)
+```
+
+
+# Plotting the OOB error vs number of trees:
+```{r}
+collision.err <- data.frame(
+  Trees=1:bagging.collision$ntree,
+  Error=c(bagging.collision$err.rate[,"OOB"],rf.collision1$err.rate[,"OOB"], rf.collision2$err.rate[,"OOB"],rf.collision3$err.rate[,"OOB"]),
+  Type=rep(c("Bagging with m=p", "RF with m=p/2", "RF with m=sqrt(p)","RF with m=p/3"), each=bagging.collision$ntree)
+)
+```
+
+```{r}
+ggplot(data=collision.err, aes(x=Trees, y=Error)) +  geom_line(aes(color=Type)) + ggtitle("Out Of Bag Error vs Number of Trees") + xlim(0,500)+ylim(0.363,0.40) +ylab("Out of Bag Error")+xlab("Number of Trees")+theme(plot.title = element_text(hjust=0.5))
+```
+
+
+
+
+
+#Boosting Method
+```{r}
+#GBM was executed at interaction depths 1,2,3,4 and with a shrinkage parameter of 0.01 by passing the distribution as multinomial
+
+df1.boost1 = gbm(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, data = df_train,  distribution = "multinomial",n.trees = 500, interaction.depth = 1, shrinkage = 0.01)
+
+df1.boost2 = gbm(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, data = df_train,  distribution = "multinomial",n.trees = 500, interaction.depth = 2, shrinkage = 0.01)
+
+df1.boost3 = gbm(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, data = df_train,  distribution = "multinomial",n.trees = 500, interaction.depth = 3, shrinkage = 0.01)
+
+df1.boost4 = gbm(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, data = df_train,  distribution = "multinomial",n.trees = 500, interaction.depth = 4, shrinkage = 0.01)
+
+```
+
+
+```{r}
+#Predicting on test data.
+df1.boost1.predict <- predict(df1.boost1, newdata = df_test, type = "response", n.trees = 500)
+df1.boost2.predict <- predict(df1.boost2, newdata = df_test, type = "response", n.trees = 500)
+df1.boost3.predict <- predict(df1.boost3, newdata = df_test, type = "response", n.trees = 500)
+df1.boost4.predict <- predict(df1.boost4, newdata = df_test, type = "response", n.trees = 500)
+```
+
+```{r}
+#Examine the boosting model1 on the test data.
+labels1 = colnames(df1.boost1.predict)[apply(df1.boost1.predict, 1, which.max)]
+table(df_test$COLLISION_TYPE, labels1)
+boost1<-mean(df_test$COLLISION_TYPE == labels1)
+boost1
+```
+
+```{r}
+#Examine the boosting model2 on the test data.
+labels2 = colnames(df1.boost2.predict)[apply(df1.boost2.predict, 1, which.max)]
+table(df_test$COLLISION_TYPE, labels2)
+boost2<-mean(df_test$COLLISION_TYPE == labels2)
+boost2
+```
+
+```{r}
+#Examine the boosting model3 on the test data.
+labels3 = colnames(df1.boost3.predict)[apply(df1.boost3.predict, 1, which.max)]
+table(df_test$COLLISION_TYPE, labels3)
+boost3<-mean(df_test$COLLISION_TYPE == labels3)
+boost3
+```
+
+```{r}
+#Examine the boosting model4 on the test data.
+labels4 = colnames(df1.boost4.predict)[apply(df1.boost4.predict, 1, which.max)]
+table(df_test$COLLISION_TYPE, labels3)
+boost4<-mean(df_test$COLLISION_TYPE == labels4)
+boost4
+```
+
+
+```{r}
+# Plotting the training error vs number of trees:
+bagging_boosting1.err <- data.frame(
+  Trees=1:500,
+  Error=c(df1.boost1$train.error, df1.boost2$train.error, df1.boost3$train.error,df1.boost4$train.error),
+  Type=rep(c( "Boosting with d=1, s=0.01", "Boosting with d=2, s=0.01", "Boosting with d=3, s=0.01","Boosting with d=3, s=0.01"), each=500)
+)
+
+ggplot(data=bagging_boosting1.err, aes(x=Trees, y=Error)) +  geom_line(aes(color=Type)) + ggtitle("Training Error vs Number of Trees")+ylab("Training Error")+xlab("Number of Trees")+theme(plot.title = element_text(hjust=0.5))
+```
+
+
+
+
+#Logistic Regression
+
+```{r}
+#Fit multinomial logistic regression on training dataset
+logistic_model <- multinom(COLLISION_TYPE~VEHICLE_COUNT+PEDESTRIANS_COUNT+BICYCLE_COUNT+ADDRESS_TYPE+SEVERITY+LIGHT_CONDITIONS, data=df_train)
+
+```
+
+```{r}
+#Predict it on test data
+predicted_collision<-predict(logistic_model, df_test, type="class")
+```
+
+```{r}
+#Examine the model's performance on the test data.
+table(predicted_collision, df_test$COLLISION_TYPE)
+logistic <-mean(predicted_collision == df_test$COLLISION_TYPE)
+logistic
+```
+
+
+
+
+#Use plotly to plot accuracies of all models
+```{r}
+library(plotly)
+
+x <- c("Decision Tree","Bagging", "Random Forest-p/2","Random Forest-sqrt(p)", "Boosting", "Logistic Regression")
+y <- c(model1, model2, model3, model4, model5,model6)
+data <- data.frame(x, y)
+
+fig <- plot_ly(data, x = ~x, y = ~y, type = 'bar',
+        marker = list(color = c('rgba(204,204,204,1)','rgba(204,204,204,1)', 'rgba(222,45,67,0.7)',
+                                'rgba(204,204,204,1)', 'rgba(204,204,204,1)',
+                                'rgba(204,204,204,1)')))
+fig <- fig %>% layout(title = "Compare the performance of each model",
+         xaxis = list(title = "Model"),
+         yaxis = list(title = "Accuracy of the model"))
+
+fig
+```
+
+
+
+```{r}
+types <- c("Decision Tree","RF-sqrt(p)", "Boosting (d=3,s=0.01)", "Logistic")
+values <- c(65.16, 65.45, 65.43, 65.30)
+x = c(1,2,3,4)
+plot(values, type = 'o', ylim = c(64, 66), at = x,labels = types,xlab="Models",ylab="Performance of the models",main="Comparing the performance of each model")
+text(x=types,y=values,labels=as.character(values))
+```
+
+
+```{r}
+pt = data.frame(x=c("Decision Tree","RF-p/2", "Boosting", "Logistic"),
+                y=c(65.16, 65.35, 65.43, 65.30))
+plot(x=pt$x,y=pt$y)+xlim=c(64,66)
+text(x= pt$x,y=pt$y,labels=pt$y)
+```
+
+
+
+
+
